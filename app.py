@@ -185,6 +185,12 @@ st.markdown(
             box-shadow: 0 14px 30px rgba(109, 93, 251, .30);
         }
 
+        .stButton > button p,
+        .stFormSubmitButton > button p {
+            color: white !important;
+            font-weight: 800 !important;
+        }
+
         /* Inputs */
         div[data-baseweb="select"] > div,
         div[data-baseweb="input"] > div,
@@ -685,8 +691,14 @@ st.markdown(
 
 
 def html_block(content: str) -> None:
-    """Render HTML without Markdown treating indentation as a code block."""
-    st.markdown(dedent(content).strip(), unsafe_allow_html=True)
+    """Render custom HTML without Markdown exposing indented tags as raw code."""
+    cleaned = dedent(content).strip()
+    cleaned = "\n".join(line.strip() for line in cleaned.splitlines())
+
+    if hasattr(st, "html"):
+        st.html(cleaned)
+    else:
+        st.markdown(cleaned, unsafe_allow_html=True)
 
 
 def section_header(kicker: str, title: str, copy: str = "") -> None:
@@ -1009,6 +1021,7 @@ with st.sidebar:
             <div class="brand-mark">✦</div>
             <div class="brand-title">Behind the Numbers</div>
             <div class="brand-subtitle">Student Depression ML Explorer</div>
+            <div style="margin-top:.55rem;display:inline-block;padding:.22rem .5rem;border-radius:999px;background:rgba(109,93,251,.28);font-size:.68rem;font-weight:800;letter-spacing:.05em;">UI VERSION 3.0</div>
         </div>
         """
     )
@@ -1961,7 +1974,7 @@ elif page == "Prediction Studio":
     section_header(
         "Interactive prediction",
         "Prediction Studio",
-        "Build a student profile, compare all three model outputs, and test a simple sleep-and-stress scenario.",
+        "Choose one trained model, build a student profile, and view that model's prediction.",
     )
 
     html_block(
@@ -1980,7 +1993,38 @@ elif page == "Prediction Studio":
         dataset["Department"].dropna().astype(str).unique()
     )
 
+    model_names = list(models.keys())
+
+    # Use the highest F1 model as the initial selection when the results file allows it.
+    default_model_index = 0
+    try:
+        result_names = results["Model"].astype(str).str.strip().str.lower()
+        best_f1_row = pd.to_numeric(results["F1 Score"], errors="coerce").idxmax()
+        best_f1_name = str(results.loc[best_f1_row, "Model"]).strip().lower()
+        for index, model_name in enumerate(model_names):
+            if model_name.lower() == best_f1_name:
+                default_model_index = index
+                break
+    except Exception:
+        default_model_index = 0
+
     with st.form("prediction_form"):
+        st.markdown("### Choose the prediction model")
+
+        selected_prediction_model = st.selectbox(
+            "Model",
+            model_names,
+            index=default_model_index,
+            help=(
+                "The selected model alone will produce the prediction below. "
+                "Use Model Arena to compare test accuracy, recall, F1 score, and confusion matrices."
+            ),
+        )
+
+        st.caption(
+            "A model is not automatically correct for one new student. Its reliability is judged using its test-set metrics."
+        )
+
         st.markdown("### Build a student profile")
 
         input_columns = st.columns(3)
@@ -2052,7 +2096,7 @@ elif page == "Prediction Studio":
             )
 
         submitted = st.form_submit_button(
-            "Run all three models",
+            "Run prediction",
             use_container_width=True,
         )
 
@@ -2068,121 +2112,161 @@ elif page == "Prediction Studio":
             "Physical_Activity": physical_activity,
             "Stress_Level": stress_level,
         }
+        st.session_state["selected_prediction_model"] = selected_prediction_model
 
     if "student_profile" not in st.session_state:
         html_block(
             """
             <div class="insight-card">
                 <span class="pill">Ready</span><br><br>
-                Complete the profile and click <b>Run all three models</b> to show
-                the comparison and unlock the what-if simulator.
+                Choose a model, complete the profile, and click <b>Run prediction</b>.
             </div>
             """
         )
     else:
         student_profile = st.session_state["student_profile"]
+        chosen_model = st.session_state.get(
+            "selected_prediction_model",
+            model_names[default_model_index],
+        )
         prepared_input = prepare_model_input(student_profile)
-
-        predictions = [
-            predict_with_model(model_name, prepared_input)
-            for model_name in models
-        ]
+        selected_result = predict_with_model(chosen_model, prepared_input)
 
         st.write("")
 
         section_header(
-            "Results",
-            "Three-model comparison",
-            "The same student profile is sent to all three trained models.",
+            "Result",
+            "Selected model prediction",
+            f"This output was produced only by {chosen_model}.",
         )
 
-        prediction_columns = st.columns(len(predictions))
+        predicted_text = (
+            "Higher predicted risk"
+            if selected_result["prediction"] == 1
+            else "Lower predicted risk"
+        )
+        probability_text = (
+            f"{selected_result['probability']:.1%}"
+            if selected_result["probability"] is not None
+            else "N/A"
+        )
 
-        for display_column, result in zip(prediction_columns, predictions):
-            predicted_text = (
-                "Higher predicted risk"
-                if result["prediction"] == 1
-                else "Lower predicted risk"
+        if selected_result["prediction"] == 1:
+            prediction_background = "#FFF4F6"
+            prediction_line = "#F3C3CC"
+        else:
+            prediction_background = "#F1FBF8"
+            prediction_line = "#BFE9DC"
+
+        result_columns = st.columns([1.15, 1.85])
+
+        with result_columns[0]:
+            html_block(
+                f"""
+                <div class="prediction-card"
+                     style="--prediction-bg:{prediction_background};--prediction-line:{prediction_line};min-height:245px;">
+                    <div class="prediction-model">{chosen_model}</div>
+                    <div class="prediction-state">{predicted_text}</div>
+                    <div class="prediction-probability">{probability_text}</div>
+                    <div class="prediction-note">Predicted Depression probability</div>
+                </div>
+                """
             )
 
-            probability_text = (
-                f"{result['probability']:.1%}"
-                if result["probability"] is not None
-                else "N/A"
-            )
+        with result_columns[1]:
+            matching_metrics = results[
+                results["Model"].astype(str).str.strip().str.lower()
+                == chosen_model.strip().lower()
+            ]
 
-            if result["prediction"] == 1:
-                background = "#FFF4F6"
-                line = "#F3C3CC"
-            else:
-                background = "#F1FBF8"
-                line = "#BFE9DC"
+            if not matching_metrics.empty:
+                metric_row = matching_metrics.iloc[0]
+                model_metric_columns = st.columns(3)
 
-            with display_column:
+                metric_values = [
+                    (
+                        "Test accuracy",
+                        f"{float(metric_row['Accuracy']):.1%}",
+                        "All correct test predictions",
+                        "#EFEDFF",
+                    ),
+                    (
+                        "Test recall",
+                        f"{float(metric_row['Recall']):.1%}",
+                        "Depression cases detected",
+                        "#EAF3FF",
+                    ),
+                    (
+                        "Test F1 score",
+                        f"{float(metric_row['F1 Score']):.1%}",
+                        "Balance of precision and recall",
+                        "#EAFBF6",
+                    ),
+                ]
+
+                for column, (label, value, note, accent) in zip(
+                    model_metric_columns,
+                    metric_values,
+                ):
+                    with column:
+                        metric_card(label, value, note, accent)
+
                 html_block(
-                    f"""
-                    <div class="prediction-card"
-                         style="--prediction-bg:{background};--prediction-line:{line};">
-                        <div class="prediction-model">{result['model']}</div>
-                        <div class="prediction-state">{predicted_text}</div>
-                        <div class="prediction-probability">{probability_text}</div>
-                        <div class="prediction-note">Predicted Depression probability</div>
+                    """
+                    <div class="insight-card">
+                        <span class="pill">How to judge it</span><br><br>
+                        The test metrics tell you how this model performed on unseen labeled data.
+                        They do not prove that its prediction for one individual student is correct.
+                    </div>
+                    """
+                )
+            else:
+                html_block(
+                    """
+                    <div class="insight-card">
+                        The selected model produced a prediction, but its evaluation row was not found in model_results.csv.
                     </div>
                     """
                 )
 
-        probability_rows = [
-            {
-                "Model": result["model"],
-                "Probability": result["probability"],
-            }
-            for result in predictions
-            if result["probability"] is not None
-        ]
+        st.write("")
 
-        if probability_rows:
-            probability_data = pd.DataFrame(probability_rows)
+        with st.expander("Compare the same profile with the other models"):
+            comparison_results = [
+                predict_with_model(model_name, prepared_input)
+                for model_name in model_names
+            ]
 
-            figure = px.bar(
-                probability_data,
-                x="Probability",
-                y="Model",
-                orientation="h",
-                color="Model",
-                text_auto=".1%",
-                color_discrete_map=MODEL_COLORS,
-                title="Predicted depression probability by model",
+            comparison_rows = []
+            for result in comparison_results:
+                comparison_rows.append(
+                    {
+                        "Model": result["model"],
+                        "Prediction": (
+                            "Higher predicted risk"
+                            if result["prediction"] == 1
+                            else "Lower predicted risk"
+                        ),
+                        "Depression probability": result["probability"],
+                    }
+                )
+
+            comparison_table = pd.DataFrame(comparison_rows)
+            st.dataframe(
+                comparison_table.style.format(
+                    {"Depression probability": "{:.1%}"},
+                    na_rep="N/A",
+                ),
+                use_container_width=True,
+                hide_index=True,
             )
-            figure.update_xaxes(tickformat=".0%", range=[0, 1])
-            figure.update_traces(
-                textposition="outside",
-                cliponaxis=False,
-            )
-            style_figure(figure, height=380, show_legend=False)
-            st.plotly_chart(figure, use_container_width=True)
-
-        html_block(
-            """
-            <div class="insight-card">
-                <span class="pill">Why outputs differ</span><br><br>
-                The models can disagree because they learn patterns in different ways.
-                A probability is a model estimate, not proof that a student has or does
-                not have depression.
-            </div>
-            """
-        )
 
         st.write("")
 
         section_header(
             "Scenario testing",
             "What-if simulator",
-            "Change only sleep duration and stress level, then compare the selected model's output.",
-        )
-
-        what_if_model = st.selectbox(
-            "Choose a model for the scenario",
-            list(models.keys()),
+            f"Change sleep and stress, then see how {chosen_model} changes its output.",
         )
 
         scenario_columns = st.columns(2)
@@ -2211,11 +2295,11 @@ elif page == "Prediction Studio":
         scenario_profile["Stress_Level"] = scenario_stress
 
         original_result = predict_with_model(
-            what_if_model,
+            chosen_model,
             prepare_model_input(student_profile),
         )
         scenario_result = predict_with_model(
-            what_if_model,
+            chosen_model,
             prepare_model_input(scenario_profile),
         )
 
@@ -2257,10 +2341,10 @@ elif page == "Prediction Studio":
         st.write("")
 
         html_block(
-            """
+            f"""
             <div class="warning-card">
-                The scenario shows how the selected model output changes after changing
-                the inputs. It does not prove that sleep or stress caused the prediction.
+                The scenario uses <b>{chosen_model}</b>. It shows how that model's output changes
+                after changing the inputs; it does not prove cause and effect.
             </div>
             """
         )
