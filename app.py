@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 
 # =========================================================
-# 1. PAGE SETTINGS
+# 1. APP SETTINGS
 # =========================================================
 st.set_page_config(
     page_title="Behind the Numbers | Student Depression",
@@ -34,117 +36,735 @@ MODEL_FILES = {
     "Random Forest": BASE_DIR / "random_forest_model.joblib",
 }
 
+COLORS = {
+    "ink": "#101828",
+    "muted": "#667085",
+    "surface": "#FFFFFF",
+    "surface_soft": "#F7F8FC",
+    "line": "#E7EAF2",
+    "purple": "#6D5DFB",
+    "purple_dark": "#3D35A5",
+    "purple_soft": "#EFEDFF",
+    "blue": "#3578F6",
+    "teal": "#19A989",
+    "orange": "#F4A261",
+    "rose": "#EB5F76",
+    "navy": "#161B3B",
+}
+
 MODEL_COLORS = {
-    "Logistic Regression": "#6C63FF",
-    "Decision Tree": "#24A89A",
-    "Random Forest": "#F4A261",
+    "Logistic Regression": COLORS["purple"],
+    "Decision Tree": COLORS["teal"],
+    "Random Forest": COLORS["orange"],
 }
 
 CLASS_COLORS = {
-    "No Depression": "#24A89A",
-    "Depression": "#EF6A78",
+    "No Depression": COLORS["teal"],
+    "Depression": COLORS["rose"],
 }
 
 
 # =========================================================
-# 2. CUSTOM DESIGN
+# 2. GLOBAL DESIGN
 # =========================================================
 st.markdown(
     """
     <style>
-        .block-container {
-            max-width: 1450px;
-            padding-top: 1.6rem;
-            padding-bottom: 4rem;
+        :root {
+            --ink: #101828;
+            --muted: #667085;
+            --surface: #ffffff;
+            --surface-soft: #f7f8fc;
+            --line: #e7eaf2;
+            --purple: #6d5dfb;
+            --purple-dark: #3d35a5;
+            --purple-soft: #efedff;
+            --blue: #3578f6;
+            --teal: #19a989;
+            --orange: #f4a261;
+            --rose: #eb5f76;
+            --navy: #161b3b;
         }
 
-        .hero {
-            padding: 2.4rem;
-            border-radius: 28px;
+        html, body, [class*="css"] {
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                         "Segoe UI", sans-serif;
+        }
+
+        .stApp {
             background:
-                radial-gradient(circle at 88% 12%, rgba(160,150,255,.30), transparent 30%),
-                linear-gradient(135deg, #171B3A 0%, #2B3169 60%, #4A4386 100%);
+                radial-gradient(circle at 88% 4%, rgba(109, 93, 251, 0.08), transparent 24%),
+                linear-gradient(180deg, #fbfbfe 0%, #f7f8fc 100%);
+            color: var(--ink);
+        }
+
+        .block-container {
+            max-width: 1380px;
+            padding-top: 2rem;
+            padding-bottom: 5rem;
+        }
+
+        h1, h2, h3 {
+            color: var(--ink);
+            letter-spacing: -0.03em;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            line-height: 1.02;
+        }
+
+        h2 {
+            margin-top: 1.8rem;
+        }
+
+        p, label, .stCaption {
+            color: var(--muted);
+        }
+
+        /* Sidebar */
+        section[data-testid="stSidebar"] {
+            background:
+                radial-gradient(circle at 20% 0%, rgba(109, 93, 251, .20), transparent 28%),
+                linear-gradient(180deg, #171b3c 0%, #101329 100%);
+            border-right: 0;
+        }
+
+        section[data-testid="stSidebar"] * {
+            color: rgba(255,255,255,.92);
+        }
+
+        section[data-testid="stSidebar"] .stCaption {
+            color: rgba(255,255,255,.58) !important;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            color: rgba(255,255,255,.72);
+        }
+
+        section[data-testid="stSidebar"] hr {
+            border-color: rgba(255,255,255,.12);
+        }
+
+        section[data-testid="stSidebar"] div[role="radiogroup"] label {
+            background: transparent;
+            border: 1px solid transparent;
+            padding: .65rem .72rem;
+            border-radius: 12px;
+            transition: .18s ease;
+            margin-bottom: .22rem;
+        }
+
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+            background: rgba(255,255,255,.08);
+            border-color: rgba(255,255,255,.10);
+        }
+
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+            background: linear-gradient(135deg, rgba(109,93,251,.95), rgba(79,70,190,.95));
+            box-shadow: 0 8px 24px rgba(0,0,0,.20);
+        }
+
+        /* Buttons */
+        .stButton > button,
+        .stFormSubmitButton > button {
+            border-radius: 14px;
+            border: 0;
+            font-weight: 700;
+            min-height: 46px;
+            background: linear-gradient(135deg, var(--purple), var(--purple-dark));
             color: white;
-            margin-bottom: 1.4rem;
-            box-shadow: 0 20px 50px rgba(23, 27, 58, .18);
+            box-shadow: 0 10px 24px rgba(109, 93, 251, .22);
         }
 
-        .hero h1 {
-            margin: 0 0 .7rem 0;
-            font-size: 3.2rem;
-            line-height: 1;
-            letter-spacing: -0.04em;
+        .stButton > button:hover,
+        .stFormSubmitButton > button:hover {
+            border: 0;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 14px 30px rgba(109, 93, 251, .30);
         }
 
-        .hero p {
-            max-width: 850px;
-            margin: 0;
-            color: rgba(255,255,255,.84);
-            font-size: 1.08rem;
+        /* Inputs */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        .stNumberInput input {
+            border-radius: 12px !important;
+            border-color: var(--line) !important;
+            background: white !important;
         }
 
-        .eyebrow {
-            color: #C6C2FF;
-            font-size: .78rem;
-            font-weight: 800;
-            letter-spacing: .17em;
-            text-transform: uppercase;
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: rgba(255,255,255,.75);
+            box-shadow: 0 10px 30px rgba(16,24,40,.04);
+            overflow: hidden;
+        }
+
+        div[data-testid="stDataFrame"] {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            overflow: hidden;
+            background: white;
+            box-shadow: 0 10px 30px rgba(16,24,40,.04);
+        }
+
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: .4rem;
+            background: #eef0f7;
+            padding: .35rem;
+            border-radius: 14px;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 10px;
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        .stTabs [aria-selected="true"] {
+            background: white;
+            box-shadow: 0 4px 14px rgba(16,24,40,.08);
+        }
+
+        /* Plotly container */
+        div[data-testid="stPlotlyChart"] {
+            background: white;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            padding: .4rem;
+            box-shadow: 0 14px 34px rgba(16,24,40,.05);
+        }
+
+        /* Custom components */
+        .brand-wrap {
+            padding: .65rem .2rem 1.1rem .2rem;
+        }
+
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            font-size: 1.25rem;
+            background: linear-gradient(135deg, #7c6cff, #4f46be);
+            box-shadow: 0 12px 28px rgba(109,93,251,.36);
             margin-bottom: .8rem;
         }
 
-        .card {
-            min-height: 150px;
+        .brand-title {
+            color: white;
+            font-size: 1.22rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-subtitle {
+            color: rgba(255,255,255,.56);
+            font-size: .78rem;
+            margin-top: .2rem;
+        }
+
+        .side-note {
+            margin-top: 1rem;
+            padding: .9rem;
+            border-radius: 14px;
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.09);
+            font-size: .77rem;
+            line-height: 1.5;
+            color: rgba(255,255,255,.66);
+        }
+
+        .hero {
+            position: relative;
+            overflow: hidden;
+            min-height: 300px;
+            padding: clamp(2rem, 5vw, 4.3rem);
+            border-radius: 30px;
+            background:
+                radial-gradient(circle at 85% 18%, rgba(161,151,255,.55), transparent 21%),
+                radial-gradient(circle at 72% 70%, rgba(53,120,246,.25), transparent 27%),
+                linear-gradient(135deg, #151a3b 0%, #2a2e68 54%, #594aa0 100%);
+            box-shadow: 0 28px 70px rgba(31, 35, 79, .22);
+            color: white;
+            margin-bottom: 1.35rem;
+        }
+
+        .hero::after {
+            content: "";
+            position: absolute;
+            width: 310px;
+            height: 310px;
+            right: -60px;
+            bottom: -100px;
+            border: 1px solid rgba(255,255,255,.18);
+            border-radius: 50%;
+            box-shadow:
+                0 0 0 38px rgba(255,255,255,.035),
+                0 0 0 78px rgba(255,255,255,.025);
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 820px;
+        }
+
+        .hero-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+            padding: .45rem .7rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,.10);
+            border: 1px solid rgba(255,255,255,.15);
+            color: #d8d4ff;
+            font-size: .73rem;
+            font-weight: 800;
+            letter-spacing: .11em;
+            text-transform: uppercase;
+            margin-bottom: 1.1rem;
+        }
+
+        .hero h1 {
+            color: white;
+            margin: 0 0 .9rem 0;
+            font-size: clamp(2.6rem, 6vw, 5.2rem);
+            max-width: 780px;
+        }
+
+        .hero p {
+            color: rgba(255,255,255,.76);
+            max-width: 760px;
+            font-size: 1.05rem;
+            line-height: 1.8;
+            margin: 0;
+        }
+
+        .hero-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .55rem;
+            margin-top: 1.35rem;
+        }
+
+        .hero-tag {
+            padding: .48rem .72rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,.08);
+            border: 1px solid rgba(255,255,255,.13);
+            color: rgba(255,255,255,.82);
+            font-size: .8rem;
+        }
+
+        .section-kicker {
+            display: inline-block;
+            margin-top: .45rem;
+            margin-bottom: .25rem;
+            color: var(--purple);
+            font-size: .75rem;
+            font-weight: 800;
+            letter-spacing: .10em;
+            text-transform: uppercase;
+        }
+
+        .section-title {
+            margin: 0 0 .35rem 0;
+            font-size: clamp(1.6rem, 3vw, 2.3rem);
+            line-height: 1.1;
+            color: var(--ink);
+        }
+
+        .section-copy {
+            max-width: 850px;
+            color: var(--muted);
+            line-height: 1.7;
+            margin-bottom: 1.2rem;
+        }
+
+        .metric-card {
+            height: 100%;
+            min-height: 126px;
+            padding: 1.15rem 1.2rem;
+            border-radius: 20px;
+            background: rgba(255,255,255,.88);
+            border: 1px solid var(--line);
+            box-shadow: 0 12px 34px rgba(16,24,40,.055);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::after {
+            content: "";
+            position: absolute;
+            width: 78px;
+            height: 78px;
+            right: -30px;
+            top: -30px;
+            border-radius: 50%;
+            background: var(--accent-soft, #efedff);
+        }
+
+        .metric-label {
+            color: var(--muted);
+            font-size: .82rem;
+            font-weight: 650;
+            margin-bottom: .55rem;
+        }
+
+        .metric-value {
+            color: var(--ink);
+            font-size: clamp(1.6rem, 3vw, 2.35rem);
+            font-weight: 820;
+            letter-spacing: -0.04em;
+            line-height: 1;
+        }
+
+        .metric-note {
+            margin-top: .55rem;
+            color: var(--muted);
+            font-size: .75rem;
+        }
+
+        .story-card {
+            height: 100%;
+            min-height: 205px;
+            padding: 1.35rem;
+            border-radius: 22px;
+            background: white;
+            border: 1px solid var(--line);
+            box-shadow: 0 14px 36px rgba(16,24,40,.05);
+            transition: .2s ease;
+        }
+
+        .story-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 18px 44px rgba(16,24,40,.08);
+        }
+
+        .story-icon {
+            width: 42px;
+            height: 42px;
+            display: grid;
+            place-items: center;
+            border-radius: 13px;
+            background: var(--purple-soft);
+            color: var(--purple);
+            font-size: 1.15rem;
+            margin-bottom: 1rem;
+        }
+
+        .story-card h3 {
+            font-size: 1.05rem;
+            margin: 0 0 .6rem 0;
+        }
+
+        .story-card p {
+            font-size: .88rem;
+            line-height: 1.65;
+            margin: 0;
+        }
+
+        .timeline {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: .75rem;
+            margin-top: .7rem;
+        }
+
+        .timeline-item {
+            min-height: 118px;
+            padding: 1rem;
+            border-radius: 18px;
+            background: white;
+            border: 1px solid var(--line);
+            box-shadow: 0 10px 28px rgba(16,24,40,.04);
+        }
+
+        .timeline-number {
+            width: 26px;
+            height: 26px;
+            display: grid;
+            place-items: center;
+            border-radius: 9px;
+            background: var(--purple-soft);
+            color: var(--purple);
+            font-size: .72rem;
+            font-weight: 800;
+            margin-bottom: .72rem;
+        }
+
+        .timeline-title {
+            color: var(--ink);
+            font-size: .85rem;
+            font-weight: 750;
+            margin-bottom: .2rem;
+        }
+
+        .timeline-status {
+            color: var(--teal);
+            font-size: .72rem;
+            font-weight: 700;
+        }
+
+        .insight-card {
             padding: 1.15rem 1.2rem;
             border-radius: 18px;
-            background: white;
-            border: 1px solid #E7E9F2;
-            box-shadow: 0 10px 28px rgba(30, 35, 75, .06);
+            background: linear-gradient(135deg, rgba(109,93,251,.10), rgba(53,120,246,.06));
+            border: 1px solid rgba(109,93,251,.18);
+            color: var(--ink);
+            line-height: 1.7;
         }
 
-        .card strong {
-            display: block;
-            margin-bottom: .45rem;
-            color: #252A53;
-        }
-
-        .soft-card {
-            padding: 1.1rem 1.2rem;
-            border-radius: 18px;
-            background: linear-gradient(180deg, rgba(108,99,255,.07), white);
-            border: 1px solid rgba(108,99,255,.18);
-        }
-
-        .risk-high {
-            padding: 1.1rem;
-            border-radius: 18px;
-            background: #FFF0F2;
-            border: 1px solid #FFC8D0;
-            min-height: 145px;
-        }
-
-        .risk-low {
-            padding: 1.1rem;
-            border-radius: 18px;
-            background: #ECFBF7;
-            border: 1px solid #B7EEE0;
-            min-height: 145px;
-        }
-
-        div[data-testid="stMetric"] {
-            background: white;
-            border: 1px solid #E7E9F2;
-            border-radius: 18px;
+        .warning-card {
             padding: 1rem 1.1rem;
-            box-shadow: 0 10px 28px rgba(30, 35, 75, .05);
+            border-radius: 16px;
+            background: #fff8e8;
+            border: 1px solid #f8d991;
+            color: #744b00;
+            font-size: .84rem;
+            line-height: 1.6;
         }
 
-        div[data-testid="stSidebar"] {
-            border-right: 1px solid #ECEEF6;
+        .clean-card {
+            height: 100%;
+            min-height: 170px;
+            padding: 1.25rem;
+            border-radius: 20px;
+            background: white;
+            border: 1px solid var(--line);
+            box-shadow: 0 12px 34px rgba(16,24,40,.05);
+        }
+
+        .clean-card h3 {
+            margin: 0 0 .55rem 0;
+            font-size: 1rem;
+        }
+
+        .clean-card p {
+            margin: 0;
+            font-size: .86rem;
+            line-height: 1.65;
+        }
+
+        .model-card {
+            height: 100%;
+            min-height: 220px;
+            padding: 1.3rem;
+            border-radius: 22px;
+            background: white;
+            border: 1px solid var(--line);
+            box-shadow: 0 14px 38px rgba(16,24,40,.055);
+            border-top: 5px solid var(--model-color, var(--purple));
+        }
+
+        .model-name {
+            font-size: 1rem;
+            color: var(--ink);
+            font-weight: 800;
+            margin-bottom: .8rem;
+        }
+
+        .model-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: .5rem;
+            margin-bottom: .9rem;
+        }
+
+        .model-metric {
+            padding: .65rem .55rem;
+            border-radius: 12px;
+            background: var(--surface-soft);
+            text-align: center;
+        }
+
+        .model-metric b {
+            display: block;
+            color: var(--ink);
+            font-size: 1rem;
+        }
+
+        .model-metric span {
+            color: var(--muted);
+            font-size: .68rem;
+        }
+
+        .model-copy {
+            color: var(--muted);
+            font-size: .82rem;
+            line-height: 1.58;
+        }
+
+        .prediction-card {
+            height: 100%;
+            min-height: 190px;
+            padding: 1.3rem;
+            border-radius: 22px;
+            background: var(--prediction-bg, white);
+            border: 1px solid var(--prediction-line, var(--line));
+            box-shadow: 0 14px 36px rgba(16,24,40,.05);
+        }
+
+        .prediction-model {
+            color: var(--muted);
+            font-size: .76rem;
+            font-weight: 750;
+            text-transform: uppercase;
+            letter-spacing: .07em;
+        }
+
+        .prediction-state {
+            color: var(--ink);
+            font-size: 1.2rem;
+            font-weight: 820;
+            margin-top: .7rem;
+        }
+
+        .prediction-probability {
+            color: var(--ink);
+            font-size: 2rem;
+            font-weight: 850;
+            margin-top: .4rem;
+            letter-spacing: -.04em;
+        }
+
+        .prediction-note {
+            color: var(--muted);
+            font-size: .76rem;
+            margin-top: .45rem;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            padding: .38rem .6rem;
+            border-radius: 999px;
+            font-size: .73rem;
+            font-weight: 750;
+            background: var(--purple-soft);
+            color: var(--purple);
+        }
+
+        .footer-note {
+            margin-top: 2.6rem;
+            text-align: center;
+            color: #98a2b3;
+            font-size: .75rem;
+        }
+
+        @media (max-width: 980px) {
+            .timeline {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .hero {
+                min-height: auto;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .timeline {
+                grid-template-columns: 1fr;
+            }
+
+            .hero {
+                border-radius: 22px;
+                padding: 1.6rem;
+            }
         }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def html_block(content: str) -> None:
+    """Render HTML without Markdown treating indentation as a code block."""
+    st.markdown(dedent(content).strip(), unsafe_allow_html=True)
+
+
+def section_header(kicker: str, title: str, copy: str = "") -> None:
+    html_block(
+        f"""
+        <div class="section-kicker">{kicker}</div>
+        <div class="section-title">{title}</div>
+        <div class="section-copy">{copy}</div>
+        """
+    )
+
+
+def metric_card(
+    label: str,
+    value: str,
+    note: str = "",
+    accent_soft: str = "#EFEDFF",
+) -> None:
+    html_block(
+        f"""
+        <div class="metric-card" style="--accent-soft:{accent_soft};">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-note">{note}</div>
+        </div>
+        """
+    )
+
+
+def style_figure(
+    figure: go.Figure,
+    height: int = 420,
+    show_legend: bool = True,
+) -> go.Figure:
+    figure.update_layout(
+        height=height,
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(
+            family="Inter, Arial, sans-serif",
+            color=COLORS["ink"],
+        ),
+        title=dict(
+            font=dict(size=18, color=COLORS["ink"]),
+            x=0.03,
+            xanchor="left",
+        ),
+        margin=dict(l=40, r=24, t=70, b=45),
+        legend=dict(
+            title_text="",
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        showlegend=show_legend,
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=13,
+            font_family="Inter, Arial, sans-serif",
+        ),
+    )
+
+    figure.update_xaxes(
+        showgrid=False,
+        linecolor=COLORS["line"],
+        tickfont=dict(color=COLORS["muted"]),
+        title_font=dict(color=COLORS["muted"]),
+    )
+    figure.update_yaxes(
+        gridcolor="#EFF1F6",
+        zeroline=False,
+        tickfont=dict(color=COLORS["muted"]),
+        title_font=dict(color=COLORS["muted"]),
+    )
+    return figure
 
 
 # =========================================================
@@ -160,15 +780,12 @@ def check_files() -> None:
         *MODEL_FILES.values(),
     ]
 
-    missing_files = [
-        file.name
-        for file in required_files
-        if not file.exists()
-    ]
+    missing_files = [file.name for file in required_files if not file.exists()]
 
     if missing_files:
         st.error(
-            "Missing files: " + ", ".join(missing_files)
+            "The app cannot start because these files are missing: "
+            + ", ".join(missing_files)
         )
         st.stop()
 
@@ -176,59 +793,48 @@ def check_files() -> None:
 check_files()
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_dataset() -> pd.DataFrame:
     return pd.read_csv(DATA_FILE)
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_results() -> pd.DataFrame:
     model_results = pd.read_csv(RESULTS_FILE)
-
-    rename_map = {}
+    rename_map: dict[str, str] = {}
 
     for column in model_results.columns:
-        simple_name = (
-            column.strip()
-            .lower()
-            .replace("_", " ")
-        )
+        simple_name = column.strip().lower().replace("_", " ")
 
         if simple_name == "model":
             rename_map[column] = "Model"
-
         elif simple_name == "accuracy":
             rename_map[column] = "Accuracy"
-
         elif simple_name == "precision":
             rename_map[column] = "Precision"
-
         elif simple_name == "recall":
             rename_map[column] = "Recall"
-
-        elif simple_name in {
-            "f1",
-            "f1 score",
-            "f1score",
-        }:
+        elif simple_name in {"f1", "f1 score", "f1score"}:
             rename_map[column] = "F1 Score"
 
-    model_results = model_results.rename(
-        columns=rename_map
-    )
+    model_results = model_results.rename(columns=rename_map)
+    needed_columns = ["Model", "Accuracy", "Precision", "Recall", "F1 Score"]
 
-    needed_columns = [
-        "Model",
-        "Accuracy",
-        "Precision",
-        "Recall",
-        "F1 Score",
+    missing_columns = [
+        column for column in needed_columns if column not in model_results.columns
     ]
+
+    if missing_columns:
+        st.error(
+            "model_results.csv is missing these columns: "
+            + ", ".join(missing_columns)
+        )
+        st.stop()
 
     return model_results[needed_columns]
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_artifacts():
     loaded_models = {
         model_name: joblib.load(model_path)
@@ -236,14 +842,8 @@ def load_artifacts():
     }
 
     loaded_scaler = joblib.load(SCALER_FILE)
-
-    loaded_feature_columns = list(
-        joblib.load(FEATURES_FILE)
-    )
-
-    loaded_confusion_matrices = joblib.load(
-        MATRICES_FILE
-    )
+    loaded_feature_columns = list(joblib.load(FEATURES_FILE))
+    loaded_confusion_matrices = joblib.load(MATRICES_FILE)
 
     return (
         loaded_models,
@@ -256,150 +856,67 @@ def load_artifacts():
 dataset = load_dataset()
 results = load_results()
 
-(
-    models,
-    scaler,
-    feature_columns,
-    confusion_matrices,
-) = load_artifacts()
+models, scaler, feature_columns, confusion_matrices = load_artifacts()
 
 
 # =========================================================
-# 4. HELPER FUNCTIONS
+# 4. HELPERS
 # =========================================================
 def depression_label(value: Any) -> str:
     if isinstance(value, (bool, np.bool_)):
-        return (
-            "Depression"
-            if bool(value)
-            else "No Depression"
-        )
+        return "Depression" if bool(value) else "No Depression"
 
-    if isinstance(
-        value,
-        (
-            int,
-            float,
-            np.integer,
-            np.floating,
-        ),
-    ):
-        return (
-            "Depression"
-            if int(value) == 1
-            else "No Depression"
-        )
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return "Depression" if int(value) == 1 else "No Depression"
 
     text = str(value).strip().lower()
+    positive_values = {"1", "true", "yes", "depression", "depressed"}
 
-    positive_values = {
-        "1",
-        "true",
-        "yes",
-        "depression",
-        "depressed",
-    }
-
-    return (
-        "Depression"
-        if text in positive_values
-        else "No Depression"
-    )
+    return "Depression" if text in positive_values else "No Depression"
 
 
-def add_target_label(
-    dataframe: pd.DataFrame,
-) -> pd.DataFrame:
+def add_target_label(dataframe: pd.DataFrame) -> pd.DataFrame:
     new_dataframe = dataframe.copy()
-
-    new_dataframe["Depression_Label"] = (
-        new_dataframe["Depression"]
-        .map(depression_label)
+    new_dataframe["Depression_Label"] = new_dataframe["Depression"].map(
+        depression_label
     )
-
     return new_dataframe
 
 
-def prepare_model_input(
-    values: dict[str, Any],
-) -> pd.DataFrame:
-    row = {
-        column: 0
-        for column in feature_columns
-    }
+def prepare_model_input(values: dict[str, Any]) -> pd.DataFrame:
+    row = {column: 0 for column in feature_columns}
 
     numerical_values = {
         "Age": values["Age"],
         "CGPA": values["CGPA"],
-        "Sleep_Duration": values[
-            "Sleep_Duration"
-        ],
+        "Sleep_Duration": values["Sleep_Duration"],
         "Study_Hours": values["Study_Hours"],
-        "Social_Media_Hours": values[
-            "Social_Media_Hours"
-        ],
-        "Physical_Activity": values[
-            "Physical_Activity"
-        ],
+        "Social_Media_Hours": values["Social_Media_Hours"],
+        "Physical_Activity": values["Physical_Activity"],
         "Stress_Level": values["Stress_Level"],
-
-        # Feature Engineering
-        "Low_Sleep": int(
-            values["Sleep_Duration"] < 6
-        ),
-
-        "High_Stress": int(
-            values["Stress_Level"] >= 7
-        ),
+        "Low_Sleep": int(values["Sleep_Duration"] < 6),
+        "High_Stress": int(values["Stress_Level"] >= 7),
     }
 
     for column, value in numerical_values.items():
         if column in row:
             row[column] = value
 
-    selected_gender = (
-        str(values["Gender"])
-        .strip()
-        .lower()
-    )
-
-    selected_department = (
-        str(values["Department"])
-        .strip()
-        .lower()
-    )
+    selected_gender = str(values["Gender"]).strip().lower()
+    selected_department = str(values["Department"]).strip().lower()
 
     for column in feature_columns:
         lower_column = column.lower()
 
         if lower_column.startswith("gender_"):
-            category = (
-                column.split("_", 1)[1]
-                .strip()
-                .lower()
-            )
+            category = column.split("_", 1)[1].strip().lower()
+            row[column] = int(category == selected_gender)
 
-            row[column] = int(
-                category == selected_gender
-            )
+        elif lower_column.startswith("department_"):
+            category = column.split("_", 1)[1].strip().lower()
+            row[column] = int(category == selected_department)
 
-        elif lower_column.startswith(
-            "department_"
-        ):
-            category = (
-                column.split("_", 1)[1]
-                .strip()
-                .lower()
-            )
-
-            row[column] = int(
-                category == selected_department
-            )
-
-    return pd.DataFrame(
-        [row],
-        columns=feature_columns,
-    )
+    return pd.DataFrame([row], columns=feature_columns)
 
 
 def predict_with_model(
@@ -408,51 +925,32 @@ def predict_with_model(
 ) -> dict[str, Any]:
     selected_model = models[model_name]
 
-    # Logistic Regression needs scaled data.
     if model_name == "Logistic Regression":
-        model_input = scaler.transform(
-            prepared_input
-        )
-
-    # Trees use the original numerical values.
+        model_input = scaler.transform(prepared_input)
     else:
         model_input = prepared_input
 
-    prediction = int(
-        selected_model.predict(
-            model_input
-        )[0]
-    )
-
+    prediction = int(selected_model.predict(model_input)[0])
     probability = None
 
-    if hasattr(
-        selected_model,
-        "predict_proba",
-    ):
-        probabilities = (
-            selected_model.predict_proba(
-                model_input
-            )[0]
-        )
+    if hasattr(selected_model, "predict_proba"):
+        probabilities = selected_model.predict_proba(model_input)[0]
+        classes = list(selected_model.classes_)
 
-        classes = list(
-            selected_model.classes_
-        )
+        positive_class_index = None
 
         if 1 in classes:
-            probability = float(
-                probabilities[
-                    classes.index(1)
-                ]
-            )
-
+            positive_class_index = classes.index(1)
         elif True in classes:
-            probability = float(
-                probabilities[
-                    classes.index(True)
-                ]
-            )
+            positive_class_index = classes.index(True)
+        else:
+            for index, class_value in enumerate(classes):
+                if depression_label(class_value) == "Depression":
+                    positive_class_index = index
+                    break
+
+        if positive_class_index is not None:
+            probability = float(probabilities[positive_class_index])
 
     return {
         "model": model_name,
@@ -461,30 +959,14 @@ def predict_with_model(
     }
 
 
-def get_confusion_matrix(
-    model_name: str,
-) -> np.ndarray | None:
-    if not isinstance(
-        confusion_matrices,
-        dict,
-    ):
+def get_confusion_matrix(model_name: str) -> np.ndarray | None:
+    if not isinstance(confusion_matrices, dict):
         return None
 
     model_aliases = {
-        "Logistic Regression": [
-            "logistic",
-            "log",
-        ],
-
-        "Decision Tree": [
-            "decision tree",
-            "tree",
-        ],
-
-        "Random Forest": [
-            "random forest",
-            "forest",
-        ],
+        "Logistic Regression": ["logistic regression", "logistic", "log"],
+        "Decision Tree": ["decision tree", "tree"],
+        "Random Forest": ["random forest", "forest"],
     }
 
     for key, matrix in confusion_matrices.items():
@@ -493,192 +975,214 @@ def get_confusion_matrix(
         if key_text == model_name.lower():
             return np.asarray(matrix)
 
-        if any(
-            alias in key_text
-            for alias in model_aliases[
-                model_name
-            ]
-        ):
+        if any(alias in key_text for alias in model_aliases[model_name]):
             return np.asarray(matrix)
 
     return None
 
 
-labeled_dataset = add_target_label(dataset)
+def get_result_row(model_name: str) -> pd.Series | None:
+    matching_row = results[
+        results["Model"].astype(str).str.strip().str.lower()
+        == model_name.strip().lower()
+    ]
 
+    if matching_row.empty:
+        return None
+
+    return matching_row.iloc[0]
+
+
+labeled_dataset = add_target_label(dataset)
 overall_depression_rate = (
-    labeled_dataset["Depression_Label"]
-    .eq("Depression")
-    .mean()
+    labeled_dataset["Depression_Label"].eq("Depression").mean()
 )
 
 
 # =========================================================
 # 5. SIDEBAR
 # =========================================================
-st.sidebar.markdown(
-    "## Behind the Numbers"
-)
-
-st.sidebar.caption(
-    "Student Depression ML Explorer"
-)
-
-page = st.sidebar.radio(
-    "Navigate",
-    [
-        "Home",
-        "Student Story & EDA",
-        "Data & Workflow",
-        "Model Arena",
-        "Prediction Studio",
-    ],
-)
-
-st.sidebar.divider()
-
-st.sidebar.caption(
-    "Educational machine learning project. "
-    "Predictions are not a medical diagnosis."
-)
-
-
-# =========================================================
-# 6. HOME PAGE
-# =========================================================
-if page == "Home":
-    st.markdown(
+with st.sidebar:
+    html_block(
         """
-        <div class="hero">
-            <div class="eyebrow">
-                Student Depression Machine Learning Project
-            </div>
-
-            <h1>Behind the Numbers</h1>
-
-            <p>
-                Explore how sleep, stress, study habits,
-                social media use, physical activity, and
-                academic performance connect to the
-                model's prediction of student depression.
-            </p>
+        <div class="brand-wrap">
+            <div class="brand-mark">✦</div>
+            <div class="brand-title">Behind the Numbers</div>
+            <div class="brand-subtitle">Student Depression ML Explorer</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
-    column1, column2, column3, column4 = (
-        st.columns(4)
+    page = st.radio(
+        "Navigation",
+        [
+            "Overview",
+            "Student Story & EDA",
+            "Data & Workflow",
+            "Model Arena",
+            "Prediction Studio",
+        ],
+        label_visibility="collapsed",
     )
 
-    column1.metric(
-        "Students",
-        f"{len(dataset):,}",
+    st.divider()
+
+    html_block(
+        """
+        <div class="side-note">
+            Educational machine learning project.<br><br>
+            The predictions are model outputs, not a medical diagnosis.
+        </div>
+        """
     )
 
-    column2.metric(
-        "Original columns",
-        dataset.shape[1],
-    )
 
-    column3.metric(
-        "Depression cases",
-        f"{overall_depression_rate:.1%}",
-    )
-
-    column4.metric(
-        "Models compared",
-        len(models),
-    )
-
-    st.subheader(
-        "The story of this project"
-    )
-
-    story1, story2, story3 = st.columns(3)
-
-    with story1:
-        st.markdown(
-            """
-            <div class="card">
-                <strong>
-                    1. The hidden imbalance
-                </strong>
-
-                Most students belong to the
-                No Depression class. A model can
-                look accurate while still missing
-                many real depression cases.
+# =========================================================
+# 6. OVERVIEW
+# =========================================================
+if page == "Overview":
+    html_block(
+        """
+        <section class="hero">
+            <div class="hero-content">
+                <div class="hero-eyebrow">✦ Student Depression Machine Learning Project</div>
+                <h1>Behind the Numbers</h1>
+                <p>
+                    Explore how sleep, stress, study habits, social media use,
+                    physical activity, and academic performance connect to
+                    machine-learning predictions of student depression.
+                </p>
+                <div class="hero-tags">
+                    <span class="hero-tag">100K student records</span>
+                    <span class="hero-tag">Interactive EDA</span>
+                    <span class="hero-tag">3 classification models</span>
+                    <span class="hero-tag">What-if simulator</span>
+                </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+        </section>
+        """
+    )
+
+    metric_columns = st.columns(4)
+
+    with metric_columns[0]:
+        metric_card(
+            "Students",
+            f"{len(dataset):,}",
+            "Records available for exploration",
+            "#EFEDFF",
         )
 
-    with story2:
-        st.markdown(
-            """
-            <div class="card">
-                <strong>
-                    2. Daily student routines
-                </strong>
-
-                Sleep, study hours, social media,
-                physical activity, stress, and CGPA
-                form the student's lifestyle profile.
-            </div>
-            """,
-            unsafe_allow_html=True,
+    with metric_columns[1]:
+        metric_card(
+            "Original features",
+            f"{max(dataset.shape[1] - 1, 0)}",
+            "Before engineered features",
+            "#EAF3FF",
         )
 
-    with story3:
-        st.markdown(
-            """
-            <div class="card">
-                <strong>
-                    3. Models do not think the same
-                </strong>
-
-                Logistic Regression, Decision Tree,
-                and Random Forest make different
-                trade-offs between accuracy and recall.
-            </div>
-            """,
-            unsafe_allow_html=True,
+    with metric_columns[2]:
+        metric_card(
+            "Depression cases",
+            f"{overall_depression_rate:.1%}",
+            "Share of the full dataset",
+            "#FFF0F3",
         )
 
-    st.subheader("The full workflow")
+    with metric_columns[3]:
+        metric_card(
+            "Models compared",
+            f"{len(models)}",
+            "Different learning approaches",
+            "#EAFBF6",
+        )
 
-    workflow = pd.DataFrame(
-        {
-            "Step": [
-                "Load data",
-                "Explore",
-                "Clean",
-                "Feature engineering",
-                "Encode",
-                "Scale",
-                "PCA",
-                "Train 3 models",
-                "Evaluate",
-                "Predict",
-            ],
+    st.write("")
 
-            "Status": [
-                "Completed"
-            ] * 10,
-        }
+    section_header(
+        "Project story",
+        "What the dashboard is trying to show",
+        "The project is not only about a final prediction. It explains the data, the imbalance, and why the models can disagree.",
     )
 
-    st.dataframe(
-        workflow,
-        use_container_width=True,
-        hide_index=True,
+    story_columns = st.columns(3)
+
+    story_content = [
+        (
+            "01",
+            "The hidden imbalance",
+            "Most records belong to the No Depression class. A model can look accurate while still missing many real depression cases.",
+        ),
+        (
+            "02",
+            "Daily student routines",
+            "Sleep, stress, study hours, social media, physical activity, and CGPA form the lifestyle profile used by the models.",
+        ),
+        (
+            "03",
+            "Models think differently",
+            "Logistic Regression, Decision Tree, and Random Forest make different trade-offs between accuracy, recall, and F1 score.",
+        ),
+    ]
+
+    for column, (icon, title, body) in zip(story_columns, story_content):
+        with column:
+            html_block(
+                f"""
+                <div class="story-card">
+                    <div class="story-icon">{icon}</div>
+                    <h3>{title}</h3>
+                    <p>{body}</p>
+                </div>
+                """
+            )
+
+    st.write("")
+
+    section_header(
+        "Workflow",
+        "From raw records to an interactive prediction",
+        "The application keeps the analysis steps visible instead of hiding everything behind one prediction button.",
     )
 
-    st.warning(
-        "This application is an educational "
-        "project and must not be used as a "
-        "medical diagnosis or clinical assessment."
+    workflow_items = [
+        "Load & inspect",
+        "Clean data",
+        "Engineer features",
+        "Encode & scale",
+        "Train & evaluate",
+        "Compare models",
+        "Build prediction",
+        "Test scenarios",
+        "Explain limits",
+        "Deploy app",
+    ]
+
+    timeline_html = ['<div class="timeline">']
+
+    for index, item in enumerate(workflow_items, start=1):
+        timeline_html.append(
+            f"""
+            <div class="timeline-item">
+                <div class="timeline-number">{index:02d}</div>
+                <div class="timeline-title">{item}</div>
+                <div class="timeline-status">Completed</div>
+            </div>
+            """
+        )
+
+    timeline_html.append("</div>")
+    html_block("".join(timeline_html))
+
+    st.write("")
+
+    html_block(
+        """
+        <div class="warning-card">
+            <b>Important:</b> This is an educational machine-learning project.
+            It must not be used as a medical diagnosis, screening tool, or clinical assessment.
+        </div>
+        """
     )
 
 
@@ -686,351 +1190,234 @@ if page == "Home":
 # 7. STUDENT STORY & EDA
 # =========================================================
 elif page == "Student Story & EDA":
-    st.title(
-        "Student Story & Interactive EDA"
+    section_header(
+        "Interactive analysis",
+        "Student Story & EDA",
+        "Filter the dataset and watch every KPI and chart update. The filters are inside the page so the sidebar stays clean.",
     )
 
-    st.caption(
-        "Use the filters to explore student "
-        "groups. The KPIs and charts update "
-        "automatically."
-    )
+    genders = sorted(dataset["Gender"].dropna().astype(str).unique())
+    departments = sorted(dataset["Department"].dropna().astype(str).unique())
 
-    with st.sidebar:
-        st.divider()
-        st.markdown("### EDA filters")
+    with st.expander("Open analysis filters", expanded=True):
+        filter_row_1 = st.columns([1, 1.25, 1])
+        filter_row_2 = st.columns([1, 1, 1])
 
-        genders = sorted(
-            dataset["Gender"]
-            .dropna()
-            .astype(str)
-            .unique()
-        )
+        with filter_row_1[0]:
+            selected_genders = st.multiselect(
+                "Gender",
+                genders,
+                default=list(genders),
+            )
 
-        departments = sorted(
-            dataset["Department"]
-            .dropna()
-            .astype(str)
-            .unique()
-        )
-
-        selected_genders = st.multiselect(
-            "Gender",
-            genders,
-            default=list(genders),
-        )
-
-        selected_departments = (
-            st.multiselect(
+        with filter_row_1[1]:
+            selected_departments = st.multiselect(
                 "Department",
                 departments,
                 default=list(departments),
             )
-        )
 
-        age_range = st.slider(
-            "Age range",
+        with filter_row_1[2]:
+            selected_classes = st.multiselect(
+                "Depression class",
+                ["No Depression", "Depression"],
+                default=["No Depression", "Depression"],
+            )
 
-            int(dataset["Age"].min()),
-
-            int(dataset["Age"].max()),
-
-            (
+        with filter_row_2[0]:
+            age_range = st.slider(
+                "Age range",
                 int(dataset["Age"].min()),
                 int(dataset["Age"].max()),
-            ),
-        )
-
-        stress_range = st.slider(
-            "Stress level",
-
-            int(
-                dataset["Stress_Level"].min()
-            ),
-
-            int(
-                dataset["Stress_Level"].max()
-            ),
-
-            (
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].min()
+                (
+                    int(dataset["Age"].min()),
+                    int(dataset["Age"].max()),
                 ),
+            )
 
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].max()
+        with filter_row_2[1]:
+            stress_range = st.slider(
+                "Stress level",
+                int(dataset["Stress_Level"].min()),
+                int(dataset["Stress_Level"].max()),
+                (
+                    int(dataset["Stress_Level"].min()),
+                    int(dataset["Stress_Level"].max()),
                 ),
-            ),
-        )
+            )
 
-        sleep_range = st.slider(
-            "Sleep duration",
-
-            float(
-                dataset[
-                    "Sleep_Duration"
-                ].min()
-            ),
-
-            float(
-                dataset[
-                    "Sleep_Duration"
-                ].max()
-            ),
-
-            (
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].min()
+        with filter_row_2[2]:
+            sleep_range = st.slider(
+                "Sleep duration",
+                float(dataset["Sleep_Duration"].min()),
+                float(dataset["Sleep_Duration"].max()),
+                (
+                    float(dataset["Sleep_Duration"].min()),
+                    float(dataset["Sleep_Duration"].max()),
                 ),
-
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].max()
-                ),
-            ),
-
-            step=0.1,
-        )
-
-        selected_classes = st.multiselect(
-            "Depression class",
-
-            [
-                "No Depression",
-                "Depression",
-            ],
-
-            default=[
-                "No Depression",
-                "Depression",
-            ],
-        )
+                step=0.1,
+            )
 
     filtered = labeled_dataset[
-        labeled_dataset["Gender"]
-        .astype(str)
-        .isin(selected_genders)
-
-        & labeled_dataset["Department"]
-        .astype(str)
-        .isin(selected_departments)
-
-        & labeled_dataset["Age"].between(
-            age_range[0],
-            age_range[1],
+        labeled_dataset["Gender"].astype(str).isin(selected_genders)
+        & labeled_dataset["Department"].astype(str).isin(selected_departments)
+        & labeled_dataset["Age"].between(age_range[0], age_range[1])
+        & labeled_dataset["Stress_Level"].between(
+            stress_range[0], stress_range[1]
         )
-
-        & labeled_dataset[
-            "Stress_Level"
-        ].between(
-            stress_range[0],
-            stress_range[1],
+        & labeled_dataset["Sleep_Duration"].between(
+            sleep_range[0], sleep_range[1]
         )
-
-        & labeled_dataset[
-            "Sleep_Duration"
-        ].between(
-            sleep_range[0],
-            sleep_range[1],
-        )
-
-        & labeled_dataset[
-            "Depression_Label"
-        ].isin(selected_classes)
+        & labeled_dataset["Depression_Label"].isin(selected_classes)
     ].copy()
 
     if filtered.empty:
-        st.warning(
-            "No students match these filters."
-        )
+        st.warning("No students match the selected filters.")
         st.stop()
 
     selected_depression_rate = (
-        filtered["Depression_Label"]
-        .eq("Depression")
-        .mean()
+        filtered["Depression_Label"].eq("Depression").mean()
     )
+    rate_difference = selected_depression_rate - overall_depression_rate
 
-    rate_difference = (
-        selected_depression_rate
-        - overall_depression_rate
-    )
+    metric_columns = st.columns(5)
 
-    metric1, metric2, metric3, metric4, metric5 = (
-        st.columns(5)
-    )
+    with metric_columns[0]:
+        metric_card(
+            "Selected students",
+            f"{len(filtered):,}",
+            "Records after filtering",
+            "#EFEDFF",
+        )
 
-    metric1.metric(
-        "Selected students",
-        f"{len(filtered):,}",
-    )
+    with metric_columns[1]:
+        metric_card(
+            "Depression rate",
+            f"{selected_depression_rate:.1%}",
+            f"{rate_difference:+.1%} versus overall",
+            "#FFF0F3",
+        )
 
-    metric2.metric(
-        "Depression rate",
-        f"{selected_depression_rate:.1%}",
-        delta=(
-            f"{rate_difference:+.1%} "
-            "vs overall"
-        ),
-    )
+    with metric_columns[2]:
+        metric_card(
+            "Average sleep",
+            f"{filtered['Sleep_Duration'].mean():.1f} h",
+            "For the selected group",
+            "#EAF3FF",
+        )
 
-    metric3.metric(
-        "Average sleep",
-        (
-            f"{filtered['Sleep_Duration'].mean():.1f} h"
-        ),
-    )
+    with metric_columns[3]:
+        metric_card(
+            "Average stress",
+            f"{filtered['Stress_Level'].mean():.1f}",
+            "For the selected group",
+            "#FFF6E8",
+        )
 
-    metric4.metric(
-        "Average stress",
-        f"{filtered['Stress_Level'].mean():.1f}",
-    )
+    with metric_columns[4]:
+        metric_card(
+            "Average CGPA",
+            f"{filtered['CGPA'].mean():.2f}",
+            "For the selected group",
+            "#EAFBF6",
+        )
 
-    metric5.metric(
-        "Average CGPA",
-        f"{filtered['CGPA'].mean():.2f}",
-    )
+    st.write("")
 
     if rate_difference > 0.02:
-        st.info(
-            "The selected group has a depression "
-            f"rate {abs(rate_difference):.1%} "
-            "higher than the full dataset."
+        message = (
+            f"The selected group's depression rate is "
+            f"{abs(rate_difference):.1%} higher than the full dataset."
         )
-
     elif rate_difference < -0.02:
-        st.success(
-            "The selected group has a depression "
-            f"rate {abs(rate_difference):.1%} "
-            "lower than the full dataset."
+        message = (
+            f"The selected group's depression rate is "
+            f"{abs(rate_difference):.1%} lower than the full dataset."
         )
-
     else:
-        st.info(
-            "The selected group's depression "
-            "rate is close to the overall dataset."
+        message = (
+            "The selected group's depression rate is close to the overall dataset."
         )
 
-    left_chart, right_chart = st.columns(2)
+    html_block(
+        f"""
+        <div class="insight-card">
+            <span class="pill">Live insight</span><br><br>
+            {message}
+        </div>
+        """
+    )
 
-    with left_chart:
+    st.write("")
+
+    chart_left, chart_right = st.columns(2)
+
+    with chart_left:
         class_counts = (
             filtered["Depression_Label"]
             .value_counts()
-            .reindex(
-                [
-                    "No Depression",
-                    "Depression",
-                ],
-                fill_value=0,
-            )
+            .reindex(["No Depression", "Depression"], fill_value=0)
             .reset_index()
         )
-
-        class_counts.columns = [
-            "Class",
-            "Count",
-        ]
+        class_counts.columns = ["Class", "Count"]
 
         figure = px.pie(
             class_counts,
             names="Class",
             values="Count",
-            hole=0.62,
+            hole=0.68,
             color="Class",
             color_discrete_map=CLASS_COLORS,
-            title=(
-                "Chapter 1 — The class imbalance"
-            ),
+            title="Class balance in the selected group",
         )
-
-        figure.update_layout(
-            template="plotly_white",
-            legend_title_text="",
+        figure.update_traces(
+            textposition="inside",
+            textinfo="percent",
+            marker=dict(line=dict(color="white", width=3)),
         )
+        style_figure(figure, height=430)
+        st.plotly_chart(figure, use_container_width=True)
 
-        st.plotly_chart(
-            figure,
-            use_container_width=True,
-        )
-
-    with right_chart:
+    with chart_right:
         department_rates = (
             filtered.assign(
-                Depression_Binary=(
-                    filtered[
-                        "Depression_Label"
-                    ]
-                    .eq("Depression")
-                    .astype(int)
-                )
+                Depression_Binary=filtered["Depression_Label"]
+                .eq("Depression")
+                .astype(int)
             )
-
-            .groupby(
-                "Department",
-                as_index=False,
-            )["Depression_Binary"]
-
+            .groupby("Department", as_index=False)["Depression_Binary"]
             .mean()
-
-            .sort_values(
-                "Depression_Binary",
-                ascending=False,
-            )
+            .sort_values("Depression_Binary", ascending=True)
         )
 
         figure = px.bar(
             department_rates,
-            x="Department",
-            y="Depression_Binary",
+            x="Depression_Binary",
+            y="Department",
+            orientation="h",
             text_auto=".1%",
             color="Depression_Binary",
-
-            color_continuous_scale=[
-                "#D8F5EE",
-                "#6C63FF",
-            ],
-
-            title=(
-                "Depression rate by department"
-            ),
+            color_continuous_scale=["#EAFBF6", COLORS["purple"]],
+            title="Depression rate by department",
         )
+        figure.update_xaxes(title="Depression rate", tickformat=".0%")
+        figure.update_layout(coloraxis_showscale=False)
+        style_figure(figure, height=430, show_legend=False)
+        st.plotly_chart(figure, use_container_width=True)
 
-        figure.update_yaxes(
-            title="Depression rate",
-            tickformat=".0%",
-        )
+    st.write("")
 
-        figure.update_layout(
-            template="plotly_white",
-            coloraxis_showscale=False,
-        )
-
-        st.plotly_chart(
-            figure,
-            use_container_width=True,
-        )
-
-    st.subheader(
-        "Chapter 2 — Daily routines"
+    section_header(
+        "Lifestyle patterns",
+        "How daily routines differ",
+        "Select a feature to compare its distribution between the two target classes.",
     )
 
     feature_options = {
         "Sleep Duration": "Sleep_Duration",
         "Study Hours": "Study_Hours",
-        "Social Media Hours": (
-            "Social_Media_Hours"
-        ),
-        "Physical Activity": (
-            "Physical_Activity"
-        ),
+        "Social Media Hours": "Social_Media_Hours",
+        "Physical Activity": "Physical_Activity",
         "CGPA": "CGPA",
         "Stress Level": "Stress_Level",
         "Age": "Age",
@@ -1040,10 +1427,7 @@ elif page == "Student Story & EDA":
         "Choose a feature",
         list(feature_options.keys()),
     )
-
-    selected_feature = feature_options[
-        selected_feature_label
-    ]
+    selected_feature = feature_options[selected_feature_label]
 
     figure = px.histogram(
         filtered,
@@ -1051,30 +1435,16 @@ elif page == "Student Story & EDA":
         color="Depression_Label",
         barmode="overlay",
         opacity=0.72,
-        nbins=25,
+        nbins=28,
         color_discrete_map=CLASS_COLORS,
-
-        title=(
-            f"{selected_feature_label} "
-            "distribution by depression class"
-        ),
+        title=f"{selected_feature_label} distribution by depression class",
     )
+    style_figure(figure, height=430)
+    st.plotly_chart(figure, use_container_width=True)
 
-    figure.update_layout(
-        template="plotly_white",
-        legend_title_text="",
-    )
+    chart_left, chart_right = st.columns(2)
 
-    st.plotly_chart(
-        figure,
-        use_container_width=True,
-    )
-
-    sleep_chart, scatter_chart = (
-        st.columns(2)
-    )
-
-    with sleep_chart:
+    with chart_left:
         figure = px.box(
             filtered,
             x="Depression_Label",
@@ -1082,26 +1452,14 @@ elif page == "Student Story & EDA":
             color="Depression_Label",
             color_discrete_map=CLASS_COLORS,
             points=False,
-
-            title=(
-                "Sleep duration by "
-                "depression class"
-            ),
+            title="Sleep duration by depression class",
         )
+        style_figure(figure, height=420, show_legend=False)
+        st.plotly_chart(figure, use_container_width=True)
 
-        figure.update_layout(
-            template="plotly_white",
-            showlegend=False,
-        )
-
-        st.plotly_chart(
-            figure,
-            use_container_width=True,
-        )
-
-    with scatter_chart:
+    with chart_right:
         scatter_data = filtered.sample(
-            n=min(5000, len(filtered)),
+            n=min(3500, len(filtered)),
             random_state=42,
         )
 
@@ -1110,57 +1468,31 @@ elif page == "Student Story & EDA":
             x="Sleep_Duration",
             y="Stress_Level",
             color="Depression_Label",
-
-            hover_data=[
-                "Age",
-                "CGPA",
-                "Department",
-            ],
-
-            opacity=0.65,
-
+            hover_data=["Age", "CGPA", "Department"],
+            opacity=0.60,
             color_discrete_map=CLASS_COLORS,
-
-            title=(
-                "Sleep, stress, and depression"
-            ),
+            title="Sleep, stress, and depression",
         )
+        figure.update_traces(marker=dict(size=7))
+        style_figure(figure, height=420)
+        st.plotly_chart(figure, use_container_width=True)
 
-        figure.update_layout(
-            template="plotly_white",
-            legend_title_text="",
-        )
+    st.write("")
 
-        st.plotly_chart(
-            figure,
-            use_container_width=True,
-        )
-
-    st.subheader(
-        "Chapter 3 — No one feature "
-        "explains everything"
+    section_header(
+        "Relationships",
+        "No single feature explains everything",
+        "The heatmap gives a quick numerical view of the relationships between numeric variables.",
     )
 
-    correlation_data = dataset.drop(
-        columns=["Student_ID"],
-        errors="ignore",
-    ).copy()
-
-    correlation_data["Depression"] = (
-        correlation_data["Depression"]
-        .map(
-            lambda value: (
-                1
-                if depression_label(value)
-                == "Depression"
-                else 0
-            )
-        )
+    correlation_data = dataset.drop(columns=["Student_ID"], errors="ignore").copy()
+    correlation_data["Depression"] = correlation_data["Depression"].map(
+        lambda value: 1
+        if depression_label(value) == "Depression"
+        else 0
     )
 
-    correlation = correlation_data.corr(
-        numeric_only=True
-    )
+    correlation = correlation_data.corr(numeric_only=True)
 
     figure = px.imshow(
         correlation,
@@ -1171,50 +1503,31 @@ elif page == "Student Story & EDA":
         aspect="auto",
         title="Correlation heatmap",
     )
-
-    figure.update_layout(
-        template="plotly_white"
+    figure.update_traces(
+        hovertemplate="%{y} × %{x}<br>Correlation: %{z:.2f}<extra></extra>"
     )
-
-    st.plotly_chart(
-        figure,
-        use_container_width=True,
-    )
+    style_figure(figure, height=560, show_legend=False)
+    st.plotly_chart(figure, use_container_width=True)
 
     depression_correlations = (
         correlation["Depression"]
         .drop("Depression")
-        .sort_values(
-            key=lambda values: (
-                values.abs()
-            ),
-            ascending=False,
-        )
+        .sort_values(key=lambda values: values.abs(), ascending=False)
     )
 
-    strongest_feature = (
-        depression_correlations.index[0]
-    )
+    strongest_feature = depression_correlations.index[0]
+    strongest_value = depression_correlations.iloc[0]
 
-    strongest_value = (
-        depression_correlations.iloc[0]
-    )
-
-    st.markdown(
+    html_block(
         f"""
-        <div class="soft-card">
-            <strong>Main EDA insight</strong><br>
-
-            <b>{strongest_feature}</b> has the
-            strongest numerical correlation with
-            Depression at <b>{strongest_value:.2f}</b>,
-            but the relationship is still weak.
-
-            This means the target cannot be
-            explained using only one feature.
+        <div class="insight-card">
+            <span class="pill">Main EDA insight</span><br><br>
+            <b>{strongest_feature}</b> has the strongest numeric correlation
+            with Depression at <b>{strongest_value:.2f}</b>.
+            This still does not mean that one feature alone explains the target,
+            and correlation does not prove cause and effect.
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -1222,126 +1535,115 @@ elif page == "Student Story & EDA":
 # 8. DATA & WORKFLOW
 # =========================================================
 elif page == "Data & Workflow":
-    st.title("Data, Cleaning & Workflow")
-
-    st.caption(
-        "A transparent view of how the raw "
-        "data became model-ready."
+    section_header(
+        "Transparency",
+        "Data, Cleaning & Workflow",
+        "A clear view of the dataset and the preprocessing steps used before model training.",
     )
 
-    column1, column2, column3, column4 = (
-        st.columns(4)
-    )
+    metric_columns = st.columns(4)
 
-    column1.metric(
-        "Rows",
-        f"{dataset.shape[0]:,}",
-    )
+    with metric_columns[0]:
+        metric_card(
+            "Rows",
+            f"{dataset.shape[0]:,}",
+            "Total observations",
+            "#EFEDFF",
+        )
 
-    column2.metric(
-        "Columns",
-        dataset.shape[1],
-    )
+    with metric_columns[1]:
+        metric_card(
+            "Columns",
+            f"{dataset.shape[1]}",
+            "Including the target",
+            "#EAF3FF",
+        )
 
-    column3.metric(
-        "Missing values",
-        int(dataset.isna().sum().sum()),
-    )
+    with metric_columns[2]:
+        metric_card(
+            "Missing values",
+            f"{int(dataset.isna().sum().sum()):,}",
+            "Across the full dataset",
+            "#FFF6E8",
+        )
 
-    column4.metric(
-        "Duplicated rows",
-        int(dataset.duplicated().sum()),
-    )
+    with metric_columns[3]:
+        metric_card(
+            "Duplicated rows",
+            f"{int(dataset.duplicated().sum()):,}",
+            "Exact duplicated records",
+            "#EAFBF6",
+        )
 
-    st.subheader("Dataset sample")
+    st.write("")
 
-    st.dataframe(
-        dataset.head(12),
-        use_container_width=True,
-    )
+    tabs = st.tabs(["Dataset sample", "Column guide", "Cleaning decisions"])
 
-    st.subheader("Column guide")
+    with tabs[0]:
+        st.dataframe(
+            dataset.head(15),
+            use_container_width=True,
+            hide_index=True,
+        )
 
-    column_guide = pd.DataFrame(
-        {
-            "Column": dataset.columns,
-
-            "Data type": (
-                dataset.dtypes
-                .astype(str)
-                .values
-            ),
-
-            "Role": [
-                (
+    with tabs[1]:
+        column_guide = pd.DataFrame(
+            {
+                "Column": dataset.columns,
+                "Data type": dataset.dtypes.astype(str).values,
+                "Role": [
                     "Identifier"
                     if column == "Student_ID"
-
                     else "Target"
                     if column == "Depression"
-
                     else "Feature"
+                    for column in dataset.columns
+                ],
+            }
+        )
+
+        st.dataframe(
+            column_guide,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with tabs[2]:
+        cleaning_columns = st.columns(3)
+
+        cleaning_items = [
+            (
+                "Missing values",
+                "No missing values were found, so no imputation was required.",
+            ),
+            (
+                "Duplicated rows",
+                "No exact duplicated rows were found, so no rows were removed for duplication.",
+            ),
+            (
+                "Outliers",
+                "High or low values were kept because they can still represent valid student behavior.",
+            ),
+        ]
+
+        for column, (title, body) in zip(cleaning_columns, cleaning_items):
+            with column:
+                html_block(
+                    f"""
+                    <div class="clean-card">
+                        <div class="story-icon">✓</div>
+                        <h3>{title}</h3>
+                        <p>{body}</p>
+                    </div>
+                    """
                 )
 
-                for column in dataset.columns
-            ],
-        }
-    )
+    st.write("")
 
-    st.dataframe(
-        column_guide,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.subheader("Cleaning decisions")
-
-    decision1, decision2, decision3 = (
-        st.columns(3)
-    )
-
-    with decision1:
-        st.markdown(
-            """
-            <div class="card">
-                <strong>Missing values</strong>
-
-                No missing values were found,
-                so no imputation was needed.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with decision2:
-        st.markdown(
-            """
-            <div class="card">
-                <strong>Duplicated rows</strong>
-
-                No duplicated rows were found,
-                so no rows were removed.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with decision3:
-        st.markdown(
-            """
-            <div class="card">
-                <strong>Outliers</strong>
-
-                High values were kept because
-                they can still represent real
-                student behavior.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.subheader(
-        "Preprocessing pipeline"
+    section_header(
+        "Preprocessing",
+        "The model-ready pipeline",
+        "Each step has a specific role. The pipeline does not modify the original CSV file.",
     )
 
     pipeline = pd.DataFrame(
@@ -1353,19 +1655,18 @@ elif page == "Data & Workflow":
                 "Encode Gender and Department",
                 "Split train and test data",
                 "Scale Logistic Regression data",
-                "Apply PCA",
-                "Train three models",
+                "Apply PCA for comparison",
+                "Train three classifiers",
             ],
-
-            "Why": [
-                "The ID only identifies rows.",
-                "Marks sleep below 6 hours.",
+            "Why it was used": [
+                "The ID identifies rows but does not describe student behavior.",
+                "Marks sleep duration below 6 hours.",
                 "Marks stress level 7 or higher.",
-                "Changes text categories into numbers.",
-                "Keeps unseen data for evaluation.",
-                "Handles different numerical ranges.",
-                "Checks whether fewer components help.",
-                "Compares different classifiers.",
+                "Changes text categories into numeric model inputs.",
+                "Keeps unseen records for final evaluation.",
+                "Handles the different numerical feature ranges.",
+                "Tests whether fewer components keep enough information.",
+                "Compares linear and tree-based learning approaches.",
             ],
         }
     )
@@ -1376,30 +1677,50 @@ elif page == "Data & Workflow":
         hide_index=True,
     )
 
-    st.subheader("PCA summary")
+    st.write("")
 
-    pca1, pca2, pca3 = st.columns(3)
-
-    pca1.metric(
-        "Features before PCA",
-        16,
+    section_header(
+        "PCA experiment",
+        "Reduction was tested, not blindly accepted",
+        "PCA kept most of the variance, but the final Logistic Regression performance became slightly lower.",
     )
 
-    pca2.metric(
-        "Components after PCA",
-        12,
-    )
+    pca_columns = st.columns(3)
 
-    pca3.metric(
-        "Variance kept",
-        "95.6%",
-    )
+    with pca_columns[0]:
+        metric_card(
+            "Features before PCA",
+            "16",
+            "Encoded and engineered inputs",
+            "#EFEDFF",
+        )
 
-    st.info(
-        "PCA reduced the number of features, "
-        "but the Logistic Regression results "
-        "became slightly lower. PCA was not used "
-        "in the final prediction model."
+    with pca_columns[1]:
+        metric_card(
+            "Components after PCA",
+            "12",
+            "Reduced dimensions",
+            "#EAF3FF",
+        )
+
+    with pca_columns[2]:
+        metric_card(
+            "Variance kept",
+            "95.6%",
+            "Information retained",
+            "#EAFBF6",
+        )
+
+    st.write("")
+
+    html_block(
+        """
+        <div class="insight-card">
+            <span class="pill">Decision</span><br><br>
+            PCA was not used in the final prediction workflow because the simpler
+            reduction did not improve the final Logistic Regression result.
+        </div>
+        """
     )
 
 
@@ -1407,44 +1728,58 @@ elif page == "Data & Workflow":
 # 9. MODEL ARENA
 # =========================================================
 elif page == "Model Arena":
-    st.title("Model Arena")
-
-    st.caption(
-        "Compare the three classifiers. "
-        "High accuracy is not automatically "
-        "the best result with imbalanced data."
+    section_header(
+        "Model comparison",
+        "Model Arena",
+        "Accuracy alone can be misleading with imbalanced classes. Compare accuracy, precision, recall, and F1 score together.",
     )
 
     display_results = results.copy()
-
-    metric_columns = [
-        "Accuracy",
-        "Precision",
-        "Recall",
-        "F1 Score",
-    ]
+    metric_columns = ["Accuracy", "Precision", "Recall", "F1 Score"]
 
     for column in metric_columns:
-        display_results[column] = (
-            pd.to_numeric(
-                display_results[column],
-                errors="coerce",
-            )
+        display_results[column] = pd.to_numeric(
+            display_results[column],
+            errors="coerce",
         )
 
-    st.dataframe(
-        display_results.style.format(
-            {
-                "Accuracy": "{:.2%}",
-                "Precision": "{:.2%}",
-                "Recall": "{:.2%}",
-                "F1 Score": "{:.2%}",
-            }
-        ),
+    best_accuracy = display_results.loc[
+        display_results["Accuracy"].idxmax(), "Model"
+    ]
+    best_recall = display_results.loc[
+        display_results["Recall"].idxmax(), "Model"
+    ]
+    best_f1 = display_results.loc[
+        display_results["F1 Score"].idxmax(), "Model"
+    ]
 
-        use_container_width=True,
-        hide_index=True,
-    )
+    highlight_columns = st.columns(3)
+
+    with highlight_columns[0]:
+        metric_card(
+            "Highest accuracy",
+            str(best_accuracy),
+            "Best overall correct rate",
+            "#EAF3FF",
+        )
+
+    with highlight_columns[1]:
+        metric_card(
+            "Highest recall",
+            str(best_recall),
+            "Finds the largest share of positive cases",
+            "#FFF0F3",
+        )
+
+    with highlight_columns[2]:
+        metric_card(
+            "Highest F1 score",
+            str(best_f1),
+            "Best precision–recall balance",
+            "#EAFBF6",
+        )
+
+    st.write("")
 
     long_results = display_results.melt(
         id_vars="Model",
@@ -1460,135 +1795,94 @@ elif page == "Model Arena":
         color="Metric",
         barmode="group",
         text_auto=".1%",
-
         color_discrete_sequence=[
-            "#6C63FF",
-            "#24A89A",
-            "#F4A261",
-            "#EF6A78",
+            COLORS["purple"],
+            COLORS["teal"],
+            COLORS["orange"],
+            COLORS["rose"],
         ],
-
         title="Model performance comparison",
     )
+    figure.update_yaxes(tickformat=".0%", range=[0, 1])
+    figure.update_traces(textposition="outside", cliponaxis=False)
+    style_figure(figure, height=500)
+    st.plotly_chart(figure, use_container_width=True)
 
-    figure.update_yaxes(
-        tickformat=".0%",
-        range=[0, 1],
-    )
+    with st.expander("See the exact metric table"):
+        st.dataframe(
+            display_results.style.format(
+                {
+                    "Accuracy": "{:.2%}",
+                    "Precision": "{:.2%}",
+                    "Recall": "{:.2%}",
+                    "F1 Score": "{:.2%}",
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
 
-    figure.update_layout(
-        template="plotly_white",
-        legend_title_text="",
-    )
+    st.write("")
 
-    st.plotly_chart(
-        figure,
-        use_container_width=True,
-    )
-
-    best_accuracy = display_results.loc[
-        display_results["Accuracy"].idxmax(),
-        "Model",
-    ]
-
-    best_recall = display_results.loc[
-        display_results["Recall"].idxmax(),
-        "Model",
-    ]
-
-    best_f1 = display_results.loc[
-        display_results["F1 Score"].idxmax(),
-        "Model",
-    ]
-
-    best1, best2, best3 = st.columns(3)
-
-    best1.metric(
-        "Highest accuracy",
-        best_accuracy,
-    )
-
-    best2.metric(
-        "Highest recall",
-        best_recall,
-    )
-
-    best3.metric(
-        "Highest F1 score",
-        best_f1,
-    )
-
-    st.subheader(
-        "How each model behaves"
+    section_header(
+        "Behavior",
+        "How each model behaves",
+        "The models learn patterns differently, so the most accurate model is not automatically the most useful one.",
     )
 
     explanations = {
         "Logistic Regression": (
-            "It has lower accuracy, but it "
-            "detects the largest share of real "
-            "depression cases. It has the best "
-            "recall and F1 score."
+            "It has lower accuracy, but it detects the largest share of real "
+            "depression cases. In this project, it gives the strongest recall and F1 balance."
         ),
-
         "Decision Tree": (
-            "Its accuracy is higher, but it "
-            "misses many real depression cases."
+            "It reaches higher accuracy than Logistic Regression, but it misses "
+            "more real depression cases and can be sensitive to the exact training split."
         ),
-
         "Random Forest": (
-            "Its accuracy is very high, but "
-            "its recall is extremely low. "
-            "It mostly predicts No Depression."
+            "It reaches very high accuracy, but its recall is extremely low. "
+            "That suggests it often defaults to the majority No Depression class."
         ),
     }
 
-    for model_name in [
-        "Logistic Regression",
-        "Decision Tree",
-        "Random Forest",
-    ]:
-        matching_row = display_results[
-            display_results["Model"]
-            .astype(str)
-            .str.lower()
-            == model_name.lower()
-        ]
+    model_columns = st.columns(3)
 
-        if matching_row.empty:
+    for column, model_name in zip(model_columns, MODEL_FILES):
+        result_row = get_result_row(model_name)
+
+        if result_row is None:
             continue
 
-        result_row = matching_row.iloc[0]
+        with column:
+            html_block(
+                f"""
+                <div class="model-card" style="--model-color:{MODEL_COLORS[model_name]};">
+                    <div class="model-name">{model_name}</div>
+                    <div class="model-metrics">
+                        <div class="model-metric">
+                            <b>{result_row['Accuracy']:.1%}</b>
+                            <span>Accuracy</span>
+                        </div>
+                        <div class="model-metric">
+                            <b>{result_row['Recall']:.1%}</b>
+                            <span>Recall</span>
+                        </div>
+                        <div class="model-metric">
+                            <b>{result_row['F1 Score']:.1%}</b>
+                            <span>F1 score</span>
+                        </div>
+                    </div>
+                    <div class="model-copy">{explanations[model_name]}</div>
+                </div>
+                """
+            )
 
-        st.markdown(
-            f"""
-            <div class="card">
-                <strong>{model_name}</strong>
+    st.write("")
 
-                Accuracy:
-                <b>{result_row['Accuracy']:.1%}</b>
-
-                &nbsp;&nbsp;
-
-                Recall:
-                <b>{result_row['Recall']:.1%}</b>
-
-                &nbsp;&nbsp;
-
-                F1:
-                <b>{result_row['F1 Score']:.1%}</b>
-
-                <br><br>
-
-                {explanations[model_name]}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.write("")
-
-    st.subheader(
-        "Confusion matrix explorer"
+    section_header(
+        "Error analysis",
+        "Confusion matrix explorer",
+        "Choose a model and inspect the exact types of correct and incorrect predictions.",
     )
 
     selected_model = st.selectbox(
@@ -1596,86 +1890,67 @@ elif page == "Model Arena":
         list(models.keys()),
     )
 
-    matrix = get_confusion_matrix(
-        selected_model
-    )
+    matrix = get_confusion_matrix(selected_model)
 
     if matrix is None:
+        st.warning("No confusion matrix was found for this model.")
+    elif np.asarray(matrix).shape != (2, 2):
         st.warning(
-            "No confusion matrix was found "
-            "for this model."
+            f"The saved confusion matrix has shape {np.asarray(matrix).shape}, "
+            "but this page expects a 2×2 binary matrix."
         )
-
     else:
+        matrix = np.asarray(matrix)
+
         figure = px.imshow(
             matrix,
             text_auto="d",
-
-            x=[
-                "No Depression",
-                "Depression",
-            ],
-
-            y=[
-                "No Depression",
-                "Depression",
-            ],
-
+            x=["No Depression", "Depression"],
+            y=["No Depression", "Depression"],
             labels={
                 "x": "Predicted",
                 "y": "Actual",
                 "color": "Count",
             },
-
-            color_continuous_scale="Blues",
-
-            title=(
-                f"{selected_model} "
-                "confusion matrix"
-            ),
+            color_continuous_scale=[
+                [0, "#F3F1FF"],
+                [1, COLORS["purple_dark"]],
+            ],
+            title=f"{selected_model} confusion matrix",
         )
-
-        figure.update_layout(
-            template="plotly_white"
+        figure.update_traces(
+            hovertemplate="Actual: %{y}<br>Predicted: %{x}<br>Count: %{z:,}<extra></extra>"
         )
-
-        st.plotly_chart(
-            figure,
-            use_container_width=True,
-        )
+        style_figure(figure, height=520, show_legend=False)
+        st.plotly_chart(figure, use_container_width=True)
 
         true_negative, false_positive, false_negative, true_positive = (
-            np.asarray(matrix).ravel()
+            matrix.ravel()
         )
 
-        value1, value2, value3, value4 = (
-            st.columns(4)
-        )
+        value_columns = st.columns(4)
 
-        value1.metric(
-            "True negatives",
-            f"{true_negative:,}",
-        )
+        values = [
+            ("True negatives", f"{true_negative:,}", "#EAFBF6"),
+            ("False positives", f"{false_positive:,}", "#FFF6E8"),
+            ("False negatives", f"{false_negative:,}", "#FFF0F3"),
+            ("True positives", f"{true_positive:,}", "#EFEDFF"),
+        ]
 
-        value2.metric(
-            "False positives",
-            f"{false_positive:,}",
-        )
+        for column, (label, value, accent) in zip(value_columns, values):
+            with column:
+                metric_card(label, value, "Count in the test set", accent)
 
-        value3.metric(
-            "False negatives",
-            f"{false_negative:,}",
-        )
+        st.write("")
 
-        value4.metric(
-            "True positives",
-            f"{true_positive:,}",
-        )
-
-        st.info(
-            "False negatives are important "
-            "because they are real depression "
-            "cases predicted as No Depression."
+        html_block(
+            """
+            <div class="warning-card">
+                <b>Why false negatives matter:</b> they are real Depression cases
+                predicted as No Depression. This is why recall must be checked instead
+                of trusting accuracy alone.
+            </div>
+            """
         )
 
 
@@ -1683,49 +1958,38 @@ elif page == "Model Arena":
 # 10. PREDICTION STUDIO
 # =========================================================
 elif page == "Prediction Studio":
-    st.title("Prediction Studio")
-
-    st.caption(
-        "Create a student profile, compare "
-        "all three models, and test a "
-        "what-if scenario."
+    section_header(
+        "Interactive prediction",
+        "Prediction Studio",
+        "Build a student profile, compare all three model outputs, and test a simple sleep-and-stress scenario.",
     )
 
-    st.warning(
-        "This is not a medical diagnosis. "
-        "It only shows what the trained models "
-        "predict from the supplied values."
+    html_block(
+        """
+        <div class="warning-card">
+            This page shows model output only. It is not a diagnosis and must not be
+            used for medical or clinical decisions.
+        </div>
+        """
     )
 
-    gender_values = sorted(
-        dataset["Gender"]
-        .dropna()
-        .astype(str)
-        .unique()
-    )
+    st.write("")
 
+    gender_values = sorted(dataset["Gender"].dropna().astype(str).unique())
     department_values = sorted(
-        dataset["Department"]
-        .dropna()
-        .astype(str)
-        .unique()
+        dataset["Department"].dropna().astype(str).unique()
     )
 
     with st.form("prediction_form"):
-        st.subheader("Student profile")
+        st.markdown("### Build a student profile")
 
-        input1, input2, input3 = (
-            st.columns(3)
-        )
+        input_columns = st.columns(3)
 
-        with input1:
+        with input_columns[0]:
             age = st.slider(
                 "Age",
-
                 int(dataset["Age"].min()),
-
                 int(dataset["Age"].max()),
-
                 int(dataset["Age"].median()),
             )
 
@@ -1739,140 +2003,52 @@ elif page == "Prediction Studio":
                 department_values,
             )
 
-        with input2:
+        with input_columns[1]:
             cgpa = st.number_input(
                 "CGPA",
-
-                min_value=float(
-                    dataset["CGPA"].min()
-                ),
-
-                max_value=float(
-                    dataset["CGPA"].max()
-                ),
-
-                value=float(
-                    dataset["CGPA"].median()
-                ),
-
+                min_value=float(dataset["CGPA"].min()),
+                max_value=float(dataset["CGPA"].max()),
+                value=float(dataset["CGPA"].median()),
                 step=0.1,
             )
 
             sleep_duration = st.slider(
                 "Sleep duration",
-
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].min()
-                ),
-
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].max()
-                ),
-
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].median()
-                ),
-
+                float(dataset["Sleep_Duration"].min()),
+                float(dataset["Sleep_Duration"].max()),
+                float(dataset["Sleep_Duration"].median()),
                 step=0.1,
             )
 
             study_hours = st.slider(
                 "Study hours",
-
-                float(
-                    dataset[
-                        "Study_Hours"
-                    ].min()
-                ),
-
-                float(
-                    dataset[
-                        "Study_Hours"
-                    ].max()
-                ),
-
-                float(
-                    dataset[
-                        "Study_Hours"
-                    ].median()
-                ),
-
+                float(dataset["Study_Hours"].min()),
+                float(dataset["Study_Hours"].max()),
+                float(dataset["Study_Hours"].median()),
                 step=0.1,
             )
 
-        with input3:
+        with input_columns[2]:
             social_media_hours = st.slider(
                 "Social media hours",
-
-                float(
-                    dataset[
-                        "Social_Media_Hours"
-                    ].min()
-                ),
-
-                float(
-                    dataset[
-                        "Social_Media_Hours"
-                    ].max()
-                ),
-
-                float(
-                    dataset[
-                        "Social_Media_Hours"
-                    ].median()
-                ),
-
+                float(dataset["Social_Media_Hours"].min()),
+                float(dataset["Social_Media_Hours"].max()),
+                float(dataset["Social_Media_Hours"].median()),
                 step=0.1,
             )
 
             physical_activity = st.slider(
                 "Physical activity",
-
-                int(
-                    dataset[
-                        "Physical_Activity"
-                    ].min()
-                ),
-
-                int(
-                    dataset[
-                        "Physical_Activity"
-                    ].max()
-                ),
-
-                int(
-                    dataset[
-                        "Physical_Activity"
-                    ].median()
-                ),
+                int(dataset["Physical_Activity"].min()),
+                int(dataset["Physical_Activity"].max()),
+                int(dataset["Physical_Activity"].median()),
             )
 
             stress_level = st.slider(
                 "Stress level",
-
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].min()
-                ),
-
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].max()
-                ),
-
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].median()
-                ),
+                int(dataset["Stress_Level"].min()),
+                int(dataset["Stress_Level"].max()),
+                int(dataset["Stress_Level"].median()),
             )
 
         submitted = st.form_submit_button(
@@ -1881,290 +2057,226 @@ elif page == "Prediction Studio":
         )
 
     if submitted:
-        st.session_state[
-            "student_profile"
-        ] = {
+        st.session_state["student_profile"] = {
             "Age": age,
             "Gender": gender,
             "Department": department,
             "CGPA": cgpa,
             "Sleep_Duration": sleep_duration,
             "Study_Hours": study_hours,
-            "Social_Media_Hours": (
-                social_media_hours
-            ),
-            "Physical_Activity": (
-                physical_activity
-            ),
+            "Social_Media_Hours": social_media_hours,
+            "Physical_Activity": physical_activity,
             "Stress_Level": stress_level,
         }
 
-    if "student_profile" in st.session_state:
-        student_profile = st.session_state[
-            "student_profile"
-        ]
-
-        prepared_input = prepare_model_input(
-            student_profile
+    if "student_profile" not in st.session_state:
+        html_block(
+            """
+            <div class="insight-card">
+                <span class="pill">Ready</span><br><br>
+                Complete the profile and click <b>Run all three models</b> to show
+                the comparison and unlock the what-if simulator.
+            </div>
+            """
         )
+    else:
+        student_profile = st.session_state["student_profile"]
+        prepared_input = prepare_model_input(student_profile)
 
         predictions = [
-            predict_with_model(
-                model_name,
-                prepared_input,
-            )
-
+            predict_with_model(model_name, prepared_input)
             for model_name in models
         ]
 
-        st.subheader(
-            "Three-model comparison"
+        st.write("")
+
+        section_header(
+            "Results",
+            "Three-model comparison",
+            "The same student profile is sent to all three trained models.",
         )
 
-        prediction_columns = st.columns(
-            len(predictions)
-        )
+        prediction_columns = st.columns(len(predictions))
 
-        for display_column, result in zip(
-            prediction_columns,
-            predictions,
-        ):
+        for display_column, result in zip(prediction_columns, predictions):
+            predicted_text = (
+                "Higher predicted risk"
+                if result["prediction"] == 1
+                else "Lower predicted risk"
+            )
+
+            probability_text = (
+                f"{result['probability']:.1%}"
+                if result["probability"] is not None
+                else "N/A"
+            )
+
+            if result["prediction"] == 1:
+                background = "#FFF4F6"
+                line = "#F3C3CC"
+            else:
+                background = "#F1FBF8"
+                line = "#BFE9DC"
+
             with display_column:
-                predicted_text = (
-                    "Higher predicted risk"
-
-                    if result["prediction"] == 1
-
-                    else "Lower predicted risk"
-                )
-
-                probability_text = (
-                    f"{result['probability']:.1%}"
-
-                    if result[
-                        "probability"
-                    ] is not None
-
-                    else "Not available"
-                )
-
-                card_class = (
-                    "risk-high"
-
-                    if result["prediction"] == 1
-
-                    else "risk-low"
-                )
-
-                st.markdown(
+                html_block(
                     f"""
-                    <div class="{card_class}">
-                        <strong>
-                            {result['model']}
-                        </strong>
-
-                        <h4>
-                            {predicted_text}
-                        </h4>
-
-                        Depression probability:
-                        <b>{probability_text}</b>
+                    <div class="prediction-card"
+                         style="--prediction-bg:{background};--prediction-line:{line};">
+                        <div class="prediction-model">{result['model']}</div>
+                        <div class="prediction-state">{predicted_text}</div>
+                        <div class="prediction-probability">{probability_text}</div>
+                        <div class="prediction-note">Predicted Depression probability</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
+                    """
                 )
 
         probability_rows = [
             {
                 "Model": result["model"],
-                "Probability": (
-                    result["probability"]
-                ),
+                "Probability": result["probability"],
             }
-
             for result in predictions
-
-            if result["probability"]
-            is not None
+            if result["probability"] is not None
         ]
 
         if probability_rows:
-            probability_data = pd.DataFrame(
-                probability_rows
-            )
+            probability_data = pd.DataFrame(probability_rows)
 
             figure = px.bar(
                 probability_data,
-                x="Model",
-                y="Probability",
+                x="Probability",
+                y="Model",
+                orientation="h",
                 color="Model",
                 text_auto=".1%",
                 color_discrete_map=MODEL_COLORS,
-
-                title=(
-                    "Predicted depression "
-                    "probability by model"
-                ),
+                title="Predicted depression probability by model",
             )
-
-            figure.update_yaxes(
-                tickformat=".0%",
-                range=[0, 1],
+            figure.update_xaxes(tickformat=".0%", range=[0, 1])
+            figure.update_traces(
+                textposition="outside",
+                cliponaxis=False,
             )
+            style_figure(figure, height=380, show_legend=False)
+            st.plotly_chart(figure, use_container_width=True)
 
-            figure.update_layout(
-                template="plotly_white",
-                showlegend=False,
-            )
-
-            st.plotly_chart(
-                figure,
-                use_container_width=True,
-            )
-
-        st.info(
-            "The models can disagree because "
-            "they learn patterns in different ways."
+        html_block(
+            """
+            <div class="insight-card">
+                <span class="pill">Why outputs differ</span><br><br>
+                The models can disagree because they learn patterns in different ways.
+                A probability is a model estimate, not proof that a student has or does
+                not have depression.
+            </div>
+            """
         )
 
-        st.subheader("What-if simulator")
+        st.write("")
+
+        section_header(
+            "Scenario testing",
+            "What-if simulator",
+            "Change only sleep duration and stress level, then compare the selected model's output.",
+        )
 
         what_if_model = st.selectbox(
             "Choose a model for the scenario",
             list(models.keys()),
         )
 
-        scenario1, scenario2 = st.columns(2)
+        scenario_columns = st.columns(2)
 
-        with scenario1:
+        with scenario_columns[0]:
             scenario_sleep = st.slider(
                 "Scenario sleep duration",
-
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].min()
-                ),
-
-                float(
-                    dataset[
-                        "Sleep_Duration"
-                    ].max()
-                ),
-
-                float(
-                    student_profile[
-                        "Sleep_Duration"
-                    ]
-                ),
-
+                float(dataset["Sleep_Duration"].min()),
+                float(dataset["Sleep_Duration"].max()),
+                float(student_profile["Sleep_Duration"]),
                 step=0.1,
                 key="scenario_sleep",
             )
 
-        with scenario2:
+        with scenario_columns[1]:
             scenario_stress = st.slider(
                 "Scenario stress level",
-
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].min()
-                ),
-
-                int(
-                    dataset[
-                        "Stress_Level"
-                    ].max()
-                ),
-
-                int(
-                    student_profile[
-                        "Stress_Level"
-                    ]
-                ),
-
+                int(dataset["Stress_Level"].min()),
+                int(dataset["Stress_Level"].max()),
+                int(student_profile["Stress_Level"]),
                 key="scenario_stress",
             )
 
-        scenario_profile = (
-            student_profile.copy()
-        )
-
-        scenario_profile[
-            "Sleep_Duration"
-        ] = scenario_sleep
-
-        scenario_profile[
-            "Stress_Level"
-        ] = scenario_stress
+        scenario_profile = student_profile.copy()
+        scenario_profile["Sleep_Duration"] = scenario_sleep
+        scenario_profile["Stress_Level"] = scenario_stress
 
         original_result = predict_with_model(
             what_if_model,
-
-            prepare_model_input(
-                student_profile
-            ),
+            prepare_model_input(student_profile),
         )
-
         scenario_result = predict_with_model(
             what_if_model,
-
-            prepare_model_input(
-                scenario_profile
-            ),
+            prepare_model_input(scenario_profile),
         )
 
         if (
-            original_result["probability"]
-            is not None
-
-            and scenario_result[
-                "probability"
-            ] is not None
+            original_result["probability"] is not None
+            and scenario_result["probability"] is not None
         ):
             probability_change = (
-                scenario_result[
-                    "probability"
-                ]
-
-                - original_result[
-                    "probability"
-                ]
+                scenario_result["probability"] - original_result["probability"]
             )
 
-            result1, result2, result3 = (
-                st.columns(3)
-            )
+            scenario_metrics = st.columns(3)
 
-            result1.metric(
-                "Original probability",
+            with scenario_metrics[0]:
+                metric_card(
+                    "Original probability",
+                    f"{original_result['probability']:.1%}",
+                    f"Sleep {student_profile['Sleep_Duration']:.1f} h · Stress {student_profile['Stress_Level']}",
+                    "#EFEDFF",
+                )
 
-                f"{original_result['probability']:.1%}",
-            )
+            with scenario_metrics[1]:
+                metric_card(
+                    "Scenario probability",
+                    f"{scenario_result['probability']:.1%}",
+                    f"Sleep {scenario_sleep:.1f} h · Stress {scenario_stress}",
+                    "#EAF3FF",
+                )
 
-            result2.metric(
-                "Scenario probability",
+            with scenario_metrics[2]:
+                accent = "#FFF0F3" if probability_change > 0 else "#EAFBF6"
+                metric_card(
+                    "Model output change",
+                    f"{probability_change:+.1%}",
+                    "Scenario minus original",
+                    accent,
+                )
 
-                f"{scenario_result['probability']:.1%}",
-            )
+        st.write("")
 
-            result3.metric(
-                "Model output change",
-
-                f"{probability_change:+.1%}",
-            )
-
-        st.caption(
-            "The what-if result only shows "
-            "how the model output changes. "
-            "It does not prove cause and effect."
+        html_block(
+            """
+            <div class="warning-card">
+                The scenario shows how the selected model output changes after changing
+                the inputs. It does not prove that sleep or stress caused the prediction.
+            </div>
+            """
         )
 
-        with st.expander(
-            "See the exact encoded model input"
-        ):
+        with st.expander("See the exact encoded model input"):
             st.dataframe(
                 prepared_input,
                 use_container_width=True,
+                hide_index=True,
             )
+
+
+html_block(
+    """
+    <div class="footer-note">
+        Behind the Numbers · Educational Machine Learning Dashboard
+    </div>
+    """
+)
